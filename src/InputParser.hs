@@ -12,6 +12,9 @@ import Control.Monad (foldM)
 
 type InputParser = Parsec String () (Maybe (String, Type))
 
+ignoreSpaces :: InputParser -> InputParser
+ignoreSpaces p = spaces *> p <* spaces
+
 unifyInputs :: Type -> Type -> Maybe Type
 unifyInputs t1 t2 | trace' ("unifying input types " ++ show t1 ++ " and " ++ show t2) False = undefined
 unifyInputs (TPair t1 t2) (TPair s1 s2) = do
@@ -61,7 +64,7 @@ str = do
 list :: InputParser
 list = do
   char '['
-  maybeElems <- sepBy inputVal (char ',')
+  maybeElems <- sepBy (ignoreSpaces inputVal) (char ',')
   char ']'
   return $ do
     elems <- sequence maybeElems
@@ -72,9 +75,9 @@ list = do
 pair :: InputParser
 pair = do
   char '('
-  elem1 <- inputVal
+  elem1 <- ignoreSpaces inputVal
   char ','
-  elem2 <- inputVal
+  elem2 <- ignoreSpaces inputVal
   char ')'
   return $ do
     (str1, typ1) <- elem1

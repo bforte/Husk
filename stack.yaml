@@ -1,0 +1,9 @@
+resolver: ghc-8.2.2
+packages:
+- .
+extra-deps:
+- mtl-2.2.1
+- parsec-3.1.11
+- text-1.2.2.2
+flags: {}
+extra-package-dbs: []

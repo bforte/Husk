@@ -1,0 +1,45 @@
+name:                Husk
+version:             0.1.0.0
+synopsis:            Functional golfing language inspired by Haskell
+homepage:            https://github.com/barbuz/Husk
+category:            Language
+build-type:          Simple
+cabal-version:       >=1.10
+extra-source-files:  README.md
+data-files:          data/dictionary.tsv
+                   , data/revdictionary.tsv
+
+executable husk
+  hs-source-dirs:      src
+  main-is:             Husk.hs
+  ghc-options:         -O2 -threaded
+  other-modules:       Builtins
+                     , Codegen
+                     , Codepage
+                     , Debug
+                     , DecompressString
+                     , Expr
+                     , FileQuoter
+                     , Infer
+                     , InputParser
+                     , Parser
+                     , PrattParser
+                     , Paths_Husk
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , containers
+                     , filepath
+                     , mtl
+                     , parsec
+                     , process
+                     , template-haskell
+
+executable husk-compress-string
+  hs-source-dirs:      src
+  main-is:             compressString.hs
+  ghc-options:         -O2 -threaded
+  other-modules:       Paths_Husk
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , containers

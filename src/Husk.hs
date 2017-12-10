@@ -73,7 +73,7 @@ consoleOpts = [Option ['b'] ["bytes"] (NoArg $ Format Bytes) "take input as byte
 
 -- Template files as String constants
 templateFile :: String
-templateFile = [litFile|header.hs|] ++ "\n" ++ [litFile|defs.hs|] ++ "\n" ++ [litFile|intSeq.hs|] ++ "\n"
+templateFile = [litFile|src/header.hs|] ++ "\n" ++ [litFile|src/defs.hs|] ++ "\n" ++ [litFile|src/intSeq.hs|] ++ "\n"
 
 -- Produce Haskell file from list of type-inferred lines
 produceFile :: [(Int, CType, Exp (Lit CType))] -> String

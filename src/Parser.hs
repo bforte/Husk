@@ -83,7 +83,7 @@ lineFuncs = [bins "argdup",
 -- Parse a multiline expression, where some lines are marked with a leading space
 multiline :: Parser [Exp [Lit Scheme]]
 multiline = do
-  lineExprs <- sepBy1 (try markedLine <|> unmarkedLine) endOfLine
+  lineExprs <- sepEndBy1 (try markedLine <|> unmarkedLine) endOfLine
   numLn <- numLines <$> getState
   unmarkeds <- unmarked <$> getState
   return $ map (updateLineNums numLn unmarkeds) lineExprs
@@ -156,7 +156,7 @@ float = do
     ("", _) -> return $ ELit [Value ("0." ++ suffix) numType]
     (_ , _) -> return $ ELit [Value (prefix ++ "." ++ suffix) numType]
   where numType = Scheme [] $ CType [] $ TConc TNum
- 
+
 -- Parse a character
 character :: Parser (Exp [Lit Scheme])
 character = do
