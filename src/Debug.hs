@@ -3,7 +3,7 @@ module Debug where
 import Debug.Trace
 
 -- Debug flag
-debug = False
+debug = True
 
 -- Conditional debug functions
 trace' :: String -> b -> b

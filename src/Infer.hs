@@ -13,7 +13,7 @@ import Data.Set ((\\))
 import qualified Data.Map as Map
 import Data.List (nub)
 import Control.Monad.State
-import Control.Monad (when, guard)
+import Control.Monad (guard, join, when)
 
 -- Possible results for enforcing a typeclass
 data Enforce = Enforce {otherCons :: [TClass],       -- "simpler" typeclass constraints
@@ -189,16 +189,18 @@ data LineFunc = Unprocessed (Exp [Lit Scheme])
 -- State for generating unique type vars
 data InfState = InfState {varSupply :: Int,
                           currSubst :: Sub,
-                          lineExprs :: Map.Map Int LineFunc}
+                          lineExprs :: Map.Map Int LineFunc,
+                          lineHints :: Map.Map Int Type}
 
 -- Monad for performing backtracking type inference
 type Infer a = StateT InfState [] a
 
-runInfer :: [Exp [Lit Scheme]] -> Infer a -> [(a, InfState)]
-runInfer exps t = runStateT t initState
+runInfer :: [Exp [Lit Scheme]] -> [(Int,Type)] -> Infer a -> [(a, InfState)]
+runInfer exps lhints t = runStateT t initState
   where initState = InfState {varSupply = 0,
                               currSubst = nullSub,
-                              lineExprs = Map.fromList [(i, Unprocessed e) | (i, e) <- zip [0..] exps]}
+                              lineExprs = Map.fromList [(i, Unprocessed e) | (i, e) <- zip [0..] exps],
+                              lineHints = Map.fromList lhints}
 
 -- Generate a new type variable
 newTVar :: String -> Infer Type
@@ -297,15 +299,19 @@ infer :: TypeEnv -> Maybe Type -> Exp [Lit Scheme] -> Infer (CType, Exp (Lit CTy
 infer env _ exp | trace' ("inferring " ++ show exp) False = undefined
 
 -- Variable: find type in environment, combine constraints, return type
-infer (TypeEnv env) _ (EVar name) = 
+infer (TypeEnv env) _ (EVar name) =
   case Map.lookup name env of
     Nothing    -> error $ "unbound variable: " ++ name
     Just sigma -> do typ <- instantiate sigma
                      return (typ, EVar name)
 
--- Line reference: pull type if already inferred, otherwise infer it
-infer env hint (ELine num) =
+-- Line reference: pull type if already inferred (use annotations first
+-- if available ), otherwise infer it
+infer env hint' (ELine num) =
   do lineExpr <- gets $ (Map.! num) . lineExprs
+     lhint <- gets $ Map.lookup num . lineHints
+     let hint = case lhint of Nothing    -> hint'
+                              h@(Just _) -> h
      case lineExpr of
        Unprocessed expr -> do
          newVar <- newTVar "l"
@@ -325,16 +331,17 @@ infer env hint (ELine num) =
          newExp <- substitute exp
          updateLines $ Map.insert num $ Processed newExp newTyp
          return (newTyp, ELine num)
-         
+
 
 -- Literal: apply helper function
 -- This is the only source of nondeterminism (overloaded function literals)
-infer _ hint (ELit lits) = do lit <- lift lits
-                              res@(CType _ typ, _) <- inferLit lit
-                              case hint of
-                                Just hintTyp -> unify typ hintTyp
-                                _            -> return ()
-                              return res
+infer _ hint (ELit lits) = do
+  lit <- lift lits
+  res@(CType _ typ, _) <- inferLit lit
+  case hint of
+    Just hintTyp -> unify typ hintTyp
+    _            -> return ()
+  return res
 
 -- Lambda abstraction: add new unbound variable to environment, recurse to body, substitute back
 infer env hint (EAbs name exp) =
@@ -417,8 +424,8 @@ typeInference env hint expr =
      return newTyp
 
 -- Infer types of lines under a constraint
-inferType :: Bool -> Scheme -> [Exp [Lit Scheme]] -> [[(Int, CType, Exp (Lit CType))]]
-inferType constrainRes typeConstr exprs = trace' ("inferring program " ++ show exprs) $ map fst $ runInfer exprs $ do
+inferType :: Bool -> Scheme -> [Exp [Lit Scheme]] -> [(Int,Type)] -> [[(Int, CType, Exp (Lit CType))]]
+inferType constrainRes typeConstr exprs lhints = trace' ("inferring program " ++ show exprs) $ map fst $ runInfer exprs lhints $ do
   CType infCons typ <- typeInference Map.empty typeConstr (ELine 0)
   when constrainRes $ do
     CType conCons genType <- instantiate typeConstr

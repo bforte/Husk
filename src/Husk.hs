@@ -19,14 +19,19 @@ import Data.List (find, intercalate, nub)
 import Data.Set (toAscList)
 
 -- Wrapper for expression parser
-parseProg :: Bool -> String -> [Type] -> Either String [[(Int, CType, Exp (Lit CType))]]
-parseProg constrainRes prog types = inferType constrainRes (foldr typeConstr resType types) <$> parseExpr prog
+parseProg :: Bool -> String -> Maybe String -> [Type] -> Either String [[(Int, CType, Exp (Lit CType))]]
+parseProg constrainRes prog annotations types =
+  inferType constrainRes (foldr typeConstr resType types) <$> parseExpr prog <*> lhints
+
   where typeConstr typ1 (Scheme vars (CType cons typ2)) =
           Scheme (nub $ vars ++ toAscList (freeVars typ1)) $
           CType cons $
           TFun typ1 typ2
         cons = if constrainRes then [Concrete $ TVar "x"] else []
         resType = Scheme ["x"] $ CType cons $ TVar "x"
+        lhints = case annotations of
+          Nothing -> Right []
+          Just as -> parseAnnotations as
 
 -- Input format flags
 data Format = Bytes
@@ -41,6 +46,7 @@ data Flag = InferType
           | OutFile String
           | Format Format
           | Translate Format
+          | Annotations String
           deriving (Eq, Show)
 
 isOutFile :: Flag -> Bool
@@ -55,6 +61,10 @@ isTranslate :: Flag -> Bool
 isTranslate (Translate _) = True
 isTranslate _ = False
 
+isAnnotations :: Flag -> Bool
+isAnnotations (Annotations _) = True
+isAnnotations _ = False
+
 -- Command line options
 consoleOpts :: [OptDescr Flag]
 consoleOpts = [Option ['b'] ["bytes"] (NoArg $ Format Bytes) "take input as bytes",
@@ -64,7 +74,8 @@ consoleOpts = [Option ['b'] ["bytes"] (NoArg $ Format Bytes) "take input as byte
                Option ['I'] ["infer2"] (NoArg InferInputType) "infer type(s) of given program, taking input type(s) into account",
                Option ['f'] ["file"] (NoArg InFile) "read program from file",
                Option ['o'] ["out"] (ReqArg OutFile "FILE") "produce Haskell file of given name",
-               Option ['t'] ["translate"] (ReqArg (Translate . parseFormat) "FORMAT") "translate source to specified format (b/u/v)"
+               Option ['t'] ["translate"] (ReqArg (Translate . parseFormat) "FORMAT") "translate source to specified format (b/u/v)",
+               Option ['a'] ["annotations"] (ReqArg Annotations "TYPES") "specify the types of source lines"
                ]
   where parseFormat "b" = Bytes
         parseFormat "u" = Unicode
@@ -122,11 +133,14 @@ main = do
           in case progInputs of
                Left err          -> putStrLn err
                Right Nothing     -> putStrLn "Could not infer valid type(s) for input(s)"
-               Right (Just typedArgs) ->
+               Right (Just typedArgs) -> do
+                 let lhints = case find isAnnotations opts of
+                       Nothing -> Nothing
+                       Just (Annotations as) -> Just as
                  if any (`elem` opts) [InferType, InferInputType]
                  then let constrainType = InferInputType `elem` opts
                           inputs = if InferInputType `elem` opts then map snd typedArgs else []
-                      in case parseProg constrainType prog inputs of
+                      in case parseProg constrainType prog lhints inputs of
                            Left err -> putStrLn err
                            Right typings -> flip mapM_ typings $
                                             \exprs -> do
@@ -147,7 +161,7 @@ main = do
                                           (Just (OutFile s), _) -> s
                                           (Nothing, True) -> progOrFile ++ ".hs"
                                           (Nothing, False) -> ".out.hs"
-                          case parseProg True prog (map snd typedArgs) of
+                          case parseProg True prog lhints (map snd typedArgs) of
                             Left err             -> putStrLn err
                             Right []             -> putStrLn "Could not infer valid type for program"
                             Right (lineExprs : _) -> do writeFile outfile $ produceFile lineExprs

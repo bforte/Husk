@@ -11,8 +11,9 @@ import Data.List (intercalate,nub)
 import Control.Monad (foldM)
 
 type InputParser = Parsec String () (Maybe (String, Type))
+type Parser a = Parsec String () a
 
-ignoreSpaces :: InputParser -> InputParser
+ignoreSpaces :: Parser a -> Parser a
 ignoreSpaces p = spaces *> p <* spaces
 
 unifyInputs :: Type -> Type -> Maybe Type
@@ -100,7 +101,7 @@ input = do
                newTyp <- unifyInputs infTyp typ
                return $ (str, newTyp)
 
-inputType :: Parsec String () Type
+inputType :: Parser Type
 inputType = numT <|> charT <|> varT <|> listT <|> pairT
   where numT  = char 'N' >> return (TConc TNum)
         charT = char 'C' >> return (TConc TChar)
@@ -110,6 +111,27 @@ inputType = numT <|> charT <|> varT <|> listT <|> pairT
           first <- inputType
           second <- inputType
           return $ TPair first second
+
+annotations :: Parser [(Int,Type)]
+annotations = sepBy annotation (ignoreSpaces $ char ';') <* eof
+  where annotation = do
+          num <- read <$> many1 digit
+          ignoreSpaces $ char ':'
+          typ <- annotationType
+          return (num,typ)
+
+        annotationType = try aTypeFunc <|> try aTypeB <|> aType
+        aTypeB = ignoreSpaces $ char '(' *> annotationType <* char ')'
+        aTypeFunc = do a <- try aTypeB <|> aType
+                       try (string "->") <|> string "~>"
+                       b <- annotationType
+                       return $ a ~> b
+        aType = ignoreSpaces inputType
+
+parseAnnotations :: String -> Either String [(Int,Type)]
+parseAnnotations str = case parse annotations "annotations" str of
+    Left err -> Left $ show err
+    Right val -> Right $ trace' ("annotations: " ++ str ++ " is " ++ show val) val
 
 parseInput :: Int -> String -> Either String (Maybe (String, Type))
 parseInput inputIndex str =
