@@ -278,8 +278,10 @@ instance Concrete TNum where
   func_simil x y | abs (x-y) <= 1 = 1
                  | otherwise      = 0
   
-  func_heads x = [1..x]
-  func_tails x = [x,x-1..1]
+  func_heads x | x >= 0    = [1 .. x]
+               | otherwise = [x .. -1]
+  func_tails x | x >= 0    = [x, x-1 .. 1]
+               | otherwise = [-1, -2 .. x]
 
 instance Concrete Char where
   isTruthy = not . C.isSpace
@@ -1156,10 +1158,12 @@ func_powstN n
           | otherwise = map (x:) (only (n-1) xs) `merge2` only n xs
 
 func_rangeN :: TNum -> TNum -> [TNum]
-func_rangeN a b = [a .. b]
+func_rangeN a b | a <= b    = [a .. b]
+                | otherwise = [a, a-1 .. b]
 
 func_rangeC :: Char -> Char -> [Char]
-func_rangeC a b = [a .. b]
+func_rangeC a b | a <= b    = [a .. b]
+                | otherwise = [a, pred a .. b]
 
 func_find :: (Husky a, Concrete b) => (a -> b) -> [a] -> a
 func_find f = func_head . func_filter f
@@ -1334,7 +1338,8 @@ func_adiags = func_init . go 1
           in diag : go (length diag + 1) (rests ++ suffix)
 
 func_lrange :: TNum -> [TNum]
-func_lrange n = [0 .. n-1]
+func_lrange n | n >= 0    = [0 .. n-1]
+              | otherwise = [n+1 .. 0]
 
 func_ixes :: [x] -> [TNum]
 func_ixes = zipWith const [1..]
@@ -1517,3 +1522,16 @@ func_gapsL ns = concat . zipWith go ns . func_cuts (abs <$> ns)
 
 func_cut2 :: [a] -> TNum -> [[a]]
 func_cut2 = flip func_cut
+
+func_chrsum :: [Char] -> TNum
+func_chrsum = func_sum . map func_ord
+
+func_nubwN :: Concrete a => TNum -> [a] -> [a]
+func_nubwN k = go [] . func_slice (abs k)
+  where go ys (xs:xss) | elem xs ys = if k < 0 then [] else func_init xs
+                       | null xss   = xs
+                       | otherwise  = func_head xs : go (xs:ys) xss
+        go _ []                     = []
+        
+func_revnum :: TNum -> TNum
+func_revnum = func_abas10 . func_rev . func_base10

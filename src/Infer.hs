@@ -314,10 +314,12 @@ infer env hint' (ELine num) =
                               h@(Just _) -> h
      case lineExpr of
        Unprocessed expr -> do
-         newVar <- newTVar "l"
-         updateLines $ Map.insert num $ Processing newVar
-         (typ@(CType _ t), infExpr) <- infer env hint expr
-         unify newVar t
+         initTyp <- case hint of
+                      Just typ -> return typ
+                      Nothing  -> newTVar "l"
+         updateLines $ Map.insert num $ Processing initTyp
+         (typ@(CType _ resTyp), infExpr) <- infer env hint expr
+         unify initTyp resTyp
          newExpr <- substitute infExpr
          newTyp <- substitute typ
          updateLines $ Map.insert num $ Processed newExpr newTyp
@@ -345,10 +347,9 @@ infer _ hint (ELit lits) = do
 
 -- Lambda abstraction: add new unbound variable to environment, recurse to body, substitute back
 infer env hint (EAbs name exp) =
-  do newVar <- newTVar "b"
-     case hint of
-       Just (TFun arg _) -> unify newVar arg
-       _                 -> return ()
+  do newVar <- case hint of
+                 Just (TFun arg _) -> return arg
+                 Nothing           -> newTVar "b"
      let TypeEnv envMinusName = remove env name
          newEnv = TypeEnv $ Map.union envMinusName $ Map.singleton name $ Scheme [] $ CType [] newVar
      (CType cons typ, newExp) <- case hint of
@@ -360,10 +361,9 @@ infer env hint (EAbs name exp) =
 
 -- Application: infer function type and argument type, unify with function, check and reduce constraints
 infer env hint exp@(EApp fun arg) = --traceShow' (fun,arg) $
-  do newVar <- newTVar "c"
-     case hint of
-       Just typ -> unify newVar typ
-       _        -> return ()
+  do newVar <- case hint of
+                 Just typ -> return typ
+                 Nothing  -> newTVar "c"
      (CType funCons funTyp, funExp) <- infer env Nothing fun
      newEnv <- substitute env
      (CType argCons argTyp, argExp) <- case funTyp of
@@ -372,8 +372,7 @@ infer env hint exp@(EApp fun arg) = --traceShow' (fun,arg) $
          infer newEnv (Just  funcArg) arg
        _                    -> do
          infer newEnv Nothing arg
-     newFunTyp <- substitute funTyp
-     unify newFunTyp (TFun argTyp newVar)
+     unify funTyp (TFun argTyp newVar)
      cons <- checkCons . nub =<< substitute (funCons ++ argCons)
      varTyp <- substitute newVar
      newFunExp <- substitute funExp
@@ -384,10 +383,9 @@ infer env hint exp@(EApp fun arg) = --traceShow' (fun,arg) $
 -- If second arg is lambda or line reference, order is first -> operator -> second to take advantage of hints
 -- Replace with two function applications in result
 infer env hint exp@(EOp op argL argR) = do
-  newVar <- newTVar "c"
-  case hint of
-    Just typ -> unify newVar typ
-    _        -> return ()
+  newVar <- case hint of
+              Just typ -> return typ
+              Nothing  -> newTVar "c"
   (CType lCons lTyp, lExp) <- infer env Nothing argL
   newEnv <- substitute env
   (CType rCons rTyp, rExp) <- infer newEnv Nothing argR
