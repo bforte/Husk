@@ -5,6 +5,9 @@ import Expr
 -- Utilities for writing types
 [x,y,z,u,v,w,n,m] = map (TVar . pure) "xyzuvwnm"
 
+nil :: Type
+nil = TConc TNil
+
 num :: Type
 num = TConc TNum
 
@@ -41,7 +44,7 @@ cmd char = error $ "No builtin bound to character " ++ [char]
 commands :: String
 commands = map fst commandsList
 
--- Unused characters: ∟¿⌐$@HWYZ[]bjlqy{}ΔΦαβγζηθρςτχψ¥ȦḂĖḢĿṄẆẎŻȧḃċıȷṅẇẋẏÄÏÜŸØäïÿ◊
+-- Unused characters: ¿⌐$@HWYZ[]bjlqy{}ΔΦαβγζηθρςτχψ¥ȦḂĖḢṄẆẎŻȧḃċıȷṅẇẋẏÄÏÜŸØäïÿ◊
 
 -- Assoc list of commands that can occur in source
 commandsList :: [(Char, Exp [Lit Scheme])]
@@ -314,7 +317,7 @@ builtinsList = [
   ("subs2", forall "x" [con x] $ lst x ~> lst x ~> lst x ~> lst x),
   ("group", forall "x" [con x] $ lst x ~> lst (lst x)),
   ("groupOn",forall "xy" [con y] $ (x ~> y) ~> lst x ~> lst (lst x)),
-  ("groupBy",forall "xy" [con y] $ (x ~> x ~> y) ~> lst x ~> lst (lst x)), 
+  ("groupBy",forall "xy" [con y] $ (x ~> x ~> y) ~> lst x ~> lst (lst x)),
   ("perms", forall "x" [] $ lst x ~> lst (lst x)),
   ("trsp",  forall "x" [] $ lst (lst x) ~> lst (lst x)),
   ("trspw", forall "x" [] $ x ~> lst (lst x) ~> lst (lst x)),
@@ -389,6 +392,10 @@ builtinsList = [
   ("gaps2", forall "x" [] $ lst x ~> num ~> lst x),
   ("gapsL", forall "x" [] $ lst num ~> lst x ~> lst x),
 
+  -- List comprehension
+  ("bindL",  forall "xy" [] $ lst x ~> (x ~> lst y) ~> lst y),
+  ("guardL", forall "x"  [con x] $ x ~> lst nil),
+
   -- Higher order functions
   ("map",   forall "xy" [] $ (x ~> y) ~> (lst x ~> lst y)),
   ("mapr",  forall "xy" [] $ lst (x ~> y) ~> x ~> lst y),
@@ -453,7 +460,7 @@ builtinsList = [
   ("sameby",forall "xy" [con y] $ (x ~> x ~> y) ~> lst x ~> num),
   ("keyon", forall "xy" [con y] $ (x ~> y) ~> lst x ~> lst (lst x)),
   ("keyby", forall "xy" [con y] $ (x ~> x ~> y) ~> lst x ~> lst (lst x)),
-  
+
   -- Combinators
   ("hook",  forall "xyz" [] $ (x ~> y ~> z) ~> (x ~> y) ~> x ~> z),
   ("hookf", forall "xyz" [] $ (x ~> y ~> z) ~> (y ~> x) ~> y ~> z),
@@ -500,7 +507,7 @@ builtinsList = [
   ("simil", forall "x" [con x] $ x ~> x ~> num),
   ("any2",  forall "xy"[con y] $ (x ~> x ~> y) ~> lst x ~> num),
   ("all2",  forall "xy"[con y] $ (x ~> x ~> y) ~> lst x ~> num),
-  
+
   -- Chars and strings
   ("chr",   simply $ num ~> chr),
   ("ord",   simply $ chr ~> num),
@@ -524,7 +531,7 @@ builtinsList = [
   ("touppr",simply $ chr ~> chr),
   ("tolowr",simply $ chr ~> chr),
   ("swcase",simply $ chr ~> chr),
-  
+
   -- Type conversions
   ("n2i",   simply $ num ~> num),
   ("c2i",   simply $ chr ~> num),

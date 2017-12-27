@@ -1,23 +1,26 @@
 
 module Parser where
 
-import Debug
-import Expr
 import Builtins
-import PrattParser
+import Codepage
+import Debug
 import DecompressString
+import Expr
+import PrattParser
 import Text.Parsec
 import Text.Parsec.Char
 import Control.Monad (forM)
 import qualified Data.Map as Map
-import Data.List (elemIndex)
+import Data.List (elemIndex,(\\))
 import Data.Maybe (catMaybes)
 
 -- Parser state
-data PState = PState {varStack :: [ELabel],
-                      varSupply :: Int,
-                      numLines :: Int,
-                      unmarked :: [Int]}
+data PState = PState
+  { varStack  :: [ELabel]
+  , varSupply :: Int
+  , numLines  :: Int
+  , unmarked  :: [Int]
+  }
 
 -- Parser type
 type Parser = Parsec String PState
@@ -65,8 +68,8 @@ popVar = do
   putState stat{varStack = trace' ("popping from " ++ show (varStack stat)) tail $ varStack stat}
 
 -- Parse a right paren or be at end of line
-rParen :: Parser ()
-rParen = (char ')' >> return ()) <|> (lookAhead endOfLine >> return ()) <|> lookAhead eof
+rParen :: Char -> Parser ()
+rParen c = (char c >> return ()) <|> (lookAhead endOfLine >> return ()) <|> lookAhead eof
 
 -- Eat a lone space character (not followed by sub- or superscipt)
 soleSpace :: Parser ()
@@ -127,7 +130,19 @@ lineExpr = do
 -- Parse an expression
 expression :: Parser (Exp [Lit Scheme])
 expression = mkPrattParser opTable term
-  where term = between (char '(') rParen expression <|> builtin <|> try float <|> integer <|> character <|> str <|> comprstr <|> intseq <|> lambda <|> try lambdaArg <|> subscript
+  where term = between (char '(') (rParen ')')expression
+            <|> builtin
+            <|> try float
+            <|> integer
+            <|> character
+            <|> str
+            <|> comprstr
+            <|> intseq
+            <|> lambda
+            <|> try lambdaArg
+            <|> subscript
+            <|> list
+
         opTable = [[InfixL $ optional soleSpace >> return (EOp invisibleOp)]]
         invisibleOp = bins "com4 com3 com2 com app"
 
@@ -190,7 +205,7 @@ comprstr = do
   quote <- char '¨'
   s <- content
   quote2 <- (char '¨' >> return ()) <|> (lookAhead endOfLine >> return ()) <|> lookAhead eof
-  return $ ELit [Value (show $ s) $ Scheme [] $CType [] $ TList (TConc TChar)]
+  return $ ELit [Value (show $ s) $ Scheme [] $ CType [] $ TList (TConc TChar)]
   where
     content = do
       comprText <- many $ noneOf "¨\n"
@@ -218,7 +233,7 @@ lambda = do
         'ψ' -> 2
         'χ' -> 3
   expr <- iterate lambdify expression !! numArgs
-  rParen
+  rParen ')'
   return $ if lam `elem` "φψχ" then EApp (bins "fix") expr else expr
   where
     lambdify parser = do
@@ -245,3 +260,74 @@ subscript = do
       subNum = foldl1 (\n d -> 10*n + d) digits
   return $ ELine subNum
   where subs  = "₀₁₂₃₄₅₆₇₈₉"
+
+
+-- Intermediate type for list comprehension parsing
+data DoExp = Ex String | Gd String deriving (Show,Eq)
+
+-- Parse a list comprehension
+list :: Parser (Exp [Lit Scheme])
+list = do
+  char '['
+  -- Preprocess statements, to reorder & parse in order
+  retStmt <- token
+  doStmts <- many doExp
+  rParen ']'
+
+  rem <- getInput -- Save remaining source
+
+  -- Parse the statements in the order that they would
+  -- appear in a do-notation
+  (vars,bind) <- processDos doStmts
+  setInput retStmt
+  ret' <- expression
+  mapM_ (const popVar) vars
+
+  setInput rem -- Restore remaining source
+
+  -- Apply return statement to all variables
+  let ret = foldl EApp ret' (map EVar vars)
+  return $ bind (EApp (bins "pure") ret)
+
+  where -- Keep string for later processing; consumes everything
+        -- until ∟Ŀ is reached (ignoring nested list comprehensions)
+        token :: Parser String
+        token = do
+          a <- many (validNot "[∟Ŀ")
+          b <- concat <$> many ( try $ do char '['
+                                          x <- many (validNot "")
+                                          char ']'
+                                          return $ '[' : x ++ "]"
+                               )
+          c <- many (validNot "∟Ŀ")
+          return $ a ++ b ++ c
+
+        validNot :: String -> Parser Char
+        validNot s = oneOf $ codepage \\ ("\n]" ++ s)
+
+        -- Parse an expression or guard
+        doExp :: Parser DoExp
+        doExp = do c <- oneOf "∟Ŀ"  -- TODO: use better different symbols
+                   t <- token
+                   case c of
+                     '∟' -> return $ Ex t
+                     'Ŀ' -> return $ Gd t
+                     _   -> fail ""
+
+        -- Build up nested lambda-expressions
+        processDos :: [DoExp] -> Parser ([ELabel],(Exp [Lit Scheme] -> Exp [Lit Scheme]))
+        processDos (Ex d:ds) = do
+          setInput d
+          exp <- expression <* eof
+          var <- pushNewVar
+          (vs,f) <- processDos ds
+          return $ (var:vs, (\x-> EOp (bins "bindL") exp (EAbs var x)) . f)
+
+        processDos (Gd d:ds) = do
+          setInput d
+          exp' <- expression <* eof
+          (vs,f) <- processDos ds
+          let exp = EApp (bins "guardL") exp'
+          return $ (vs, (\x-> EOp (bins "bindL") exp (EApp (bins "const") x)) . f)
+
+        processDos [] = return ([],id)

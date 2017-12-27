@@ -67,12 +67,12 @@ cancel a = a
 operate :: (Integer -> Integer -> Integer -> Integer -> (Integer, Integer)) -> (Double -> Double -> TNum) -> TNum -> TNum -> TNum
 operate f _ (p :% q) (r :% s) | (x, y) <- f p q r s = cancel $ x :% y
 operate _ (!) a b = doublify a ! doublify b
-          
+
 instance Num TNum where
   (+) = operate (\p q r s -> (p*s + r*q, q*s)) ((TDbl .) . (+))
 
   (-) = operate (\p q r s -> (p*s - r*q, q*s)) ((TDbl .) . (-))
-  
+
   (*) = operate (\p q r s -> (p*r, q*s)) ((TDbl .) . (*))
 
   abs (p :% q) = abs p :% q
@@ -92,13 +92,13 @@ instance Real TNum where
 
 instance Enum TNum where
   toEnum n = toEnum n :% 1
-  
+
   fromEnum (p :% q) = fromEnum $ p % q
   fromEnum (TDbl n) = fromEnum n
-  
+
   succ = (+1)
   pred = (-1+)
-  
+
   enumFrom = iterate succ
   enumFromThen a b = iterate (+(b-a)) a
   enumFromTo a c = case compare a c of
@@ -118,7 +118,7 @@ instance Enum TNum where
 instance Integral TNum where
   toInteger (p :% q) = div p q
   toInteger (TDbl d) = truncate d
-  
+
   quotRem a@(_ :% _) b@(_ :% _)
     | d@(p :% q) <- a / b,
       k <- div p q :% 1
@@ -148,7 +148,7 @@ numeric f pinf ninf = g
         g (0 :% 0)    = 0 :% 0
         g ((-1) :% 0) = ninf
         g x           = TDbl $ f $ doublify x
-  
+
 instance Floating TNum where
   pi = TDbl pi
 
@@ -228,22 +228,22 @@ class (Husky a, Show a, Read a, Eq a, Ord a, ToString a) => Concrete a where
   func_neq :: a -> a -> TNum
   func_congr :: a -> a -> TNum
   func_simil :: a -> a -> TNum
-  
+
   func_maxval :: a
   func_minval :: a
-  
+
   func_heads :: a -> [a]
   func_tails :: a -> [a]
-  
+
   func_eq :: a -> a -> TNum
   func_eq x y = boolToNum $ x == y
-  
+
   func_or :: a -> a -> a
   func_or y x = if isTruthy x then x else y
-  
+
   func_and :: a -> a -> a
   func_and y x = if isTruthy x then y else x
-  
+
   func_read :: [Char] -> a
   func_read x | ((val, _):_) <- reads x = val
               | otherwise = defVal
@@ -266,18 +266,18 @@ instance Concrete TNum where
   func_ge y x | x < y = 0
               | otherwise = toTruthy $ x-y+1
   func_neq y x = abs $ toTruthy (x-y)
-  
+
   func_maxval = 1 :% 0
   func_minval = (-1) :% 0
-  
+
   func_congr 0 0 = 1
   func_congr 0 _ = 0
   func_congr _ 0 = 0
   func_congr _ _ = 1
-  
+
   func_simil x y | abs (x-y) <= 1 = 1
                  | otherwise      = 0
-  
+
   func_heads x | x >= 0    = [1 .. x]
                | otherwise = [x .. -1]
   func_tails x | x >= 0    = [x, x-1 .. 1]
@@ -292,16 +292,16 @@ instance Concrete Char where
   func_le y x = fromIntegral $ max 0 (ord y - ord x + 1)
   func_ge y x = fromIntegral $ max 0 (ord x - ord y + 1)
   func_neq y x = abs.fromIntegral $ (ord x)-(ord y)
-  
+
   func_maxval = maxBound
   func_minval = minBound
-      
+
   func_congr x y | isTruthy x == isTruthy y = 1
                  | otherwise                = 0
-  
+
   func_simil x y | x==y || x == succ y || y == succ x = 1
                  | otherwise                  = 0
-  
+
   func_heads x = ['\0'..x]
   func_tails x = [x, pred x..'\0']
 
@@ -328,19 +328,19 @@ instance Concrete a => Concrete [a] where
           go n (x:xs) (y:ys) | x /= y = n
                              | otherwise = go (n+1) xs ys
           go n _ _ = n
-  
+
   func_maxval = repeat func_maxval
   func_minval = []
-  
+
   func_congr [] [] = 1
   func_congr [] _  = 0
   func_congr _  [] = 0
   func_congr (x:xs) (y:ys) = if func_congr x y == 0 then 0 else func_congr xs ys
-  
+
   func_simil (x:xs) (y:ys) = func_simil xs ys
   func_simil []     []     = 1
   func_simil _      _      = 0
-  
+
   func_heads=tail.inits
   func_tails=init.tails
 
@@ -353,13 +353,13 @@ instance (Concrete a, Concrete b) => Concrete (a, b) where
   func_le (x, y) (x', y') = if x > x' then func_lt y y' else func_le x x'
   func_ge (x, y) (x', y') = if x < x' then func_gt y y' else func_ge x x'
   func_neq (x, y) (x', y') = if x == x' then func_neq y y' else func_neq x x'
-  
+
   func_maxval = (func_maxval, func_maxval)
   func_minval = (func_minval, func_minval)
-  
+
   func_congr (a,b) (c,d) = if func_congr a c + func_congr b d == 2 then 1 else 0
   func_simil (a,b) (c,d) = if func_simil a c + func_simil b d == 2 then 1 else 0
-  
+
   func_heads (a,b) = [(c,d)|c<-func_heads a,d<-func_heads b]
   func_tails (a,b) = [(c,d)|c<-func_tails a,d<-func_tails b]
 
@@ -473,6 +473,14 @@ func_fst = fst
 
 func_snd :: (a,b) -> b
 func_snd = snd
+
+func_bindL :: [a] -> (a -> [b]) -> [b]
+func_bindL = (>>=)
+
+func_guardL :: Concrete a => a -> [()]
+func_guardL = guard . isTruthy
+  where guard True = [()]
+        guard False = []
 
 func_map :: (a -> b) -> [a] -> [b]
 func_map = map
@@ -772,8 +780,8 @@ func_unlines = unlines
 
 func_pfac :: TNum -> [TNum]
 func_pfac = factorize 2
-  where factorize _ 1 = [] 
-        factorize d n 
+  where factorize _ 1 = []
+        factorize d n
             | d * d > n = [n]
             | n `mod` d == 0 = d : factorize d (n `div` d)
             | otherwise = factorize (d + 1) n
@@ -1024,7 +1032,7 @@ func_oelem = go 1
         go n (x:xs) y | y>x = go (n+1) xs y
                       | y==x = n
                       | otherwise = 0
-                      
+
 func_oelem' :: Concrete a => a -> [a] -> TNum
 func_oelem' = flip func_oelem
 
@@ -1532,6 +1540,6 @@ func_nubwN k = go [] . func_slice (abs k)
                        | null xss   = xs
                        | otherwise  = func_head xs : go (xs:ys) xss
         go _ []                     = []
-        
+
 func_revnum :: TNum -> TNum
 func_revnum = func_abas10 . func_rev . func_base10
