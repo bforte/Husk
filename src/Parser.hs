@@ -1,4 +1,4 @@
-
+{-# LANGUAGE LambdaCase #-}
 module Parser where
 
 import Builtins
@@ -20,6 +20,7 @@ data PState = PState
   , varSupply :: Int
   , numLines  :: Int
   , unmarked  :: [Int]
+  , parenCtr  :: Int
   }
 
 -- Parser type
@@ -30,7 +31,7 @@ parseExpr :: String -> Either String [Exp [Lit Scheme]]
 parseExpr str = case runParser multiline initState "" str of
   Left err -> Left $ show err
   Right val -> Right val
-  where initState = PState [] 0 0 []
+  where initState = PState [] 0 0 [] 0
 
 -- Generate and push a new expression variable
 pushNewVar :: Parser ELabel
@@ -68,8 +69,8 @@ popVar = do
   putState stat{varStack = trace' ("popping from " ++ show (varStack stat)) tail $ varStack stat}
 
 -- Parse a right paren or be at end of line
-rParen :: Char -> Parser ()
-rParen c = (char c >> return ()) <|> (lookAhead endOfLine >> return ()) <|> lookAhead eof
+rParen :: Parser ()
+rParen = (char ')' >> return ()) <|> (lookAhead endOfLine >> return ()) <|> lookAhead eof
 
 -- Eat a lone space character (not followed by sub- or superscipt)
 soleSpace :: Parser ()
@@ -130,7 +131,7 @@ lineExpr = do
 -- Parse an expression
 expression :: Parser (Exp [Lit Scheme])
 expression = mkPrattParser opTable term
-  where term = between (char '(') (rParen ')')expression
+  where term = between (char '(') rParen expression
             <|> builtin
             <|> try float
             <|> integer
@@ -233,7 +234,7 @@ lambda = do
         'ψ' -> 2
         'χ' -> 3
   expr <- iterate lambdify expression !! numArgs
-  rParen ')'
+  rParen
   return $ if lam `elem` "φψχ" then EApp (bins "fix") expr else expr
   where
     lambdify parser = do
@@ -268,51 +269,51 @@ data DoExp = Ex String | Gd String deriving (Show,Eq)
 -- Parse a list comprehension
 list :: Parser (Exp [Lit Scheme])
 list = do
-  char '['
+  l <- oneOf "[]"
   -- Preprocess statements, to reorder & parse in order
   retStmt <- token
-  doStmts <- many doExp
-  rParen ']'
+  doStmts <- many $ oneOf "∟Ŀ" >>= \case
+                      '∟' -> Ex <$> token
+                      'Ŀ' -> Gd <$> token
+  rParen
 
   rem <- getInput -- Save remaining source
 
   -- Parse the statements in the order that they would
   -- appear in a do-notation
   (vars,bind) <- processDos doStmts
-  setInput retStmt
-  ret' <- expression
+
+  ret' <- if null retStmt then return (bins "id")
+                          else do setInput retStmt *> expression
+
   mapM_ (const popVar) vars
 
   setInput rem -- Restore remaining source
 
-  -- Apply return statement to all variables
-  let ret = foldl EApp ret' (map EVar vars)
+  -- Apply return statement to all variables in case of [ or an empty return
+  -- TODO: better default for ']' and empty return
+  let ret = if l == '[' || null retStmt then foldl EApp ret' (map EVar vars)
+                                        else ret'
   return $ bind (EApp (bins "pure") ret)
 
-  where -- Keep string for later processing; consumes everything
-        -- until ∟Ŀ is reached (ignoring nested list comprehensions)
+  where -- Keep strings for later processing; consumes everything
+        -- until ∟,Ŀ or ) is reached (ignoring nested list comprehensions)
         token :: Parser String
-        token = do
-          a <- many (validNot "[∟Ŀ")
-          b <- concat <$> many ( try $ do char '['
-                                          x <- many (validNot "")
-                                          char ']'
-                                          return $ '[' : x ++ "]"
-                               )
-          c <- many (validNot "∟Ŀ")
-          return $ a ++ b ++ c
+        token = parenCtr <$> getState >>= \case
+          0 -> done <|> recurse
+          _ -> recurse
 
-        validNot :: String -> Parser Char
-        validNot s = oneOf $ codepage \\ ("\n]" ++ s)
+        done = lookAhead (oneOf "∟Ŀ" *> return () <|> rParen) *> return []
 
-        -- Parse an expression or guard
-        doExp :: Parser DoExp
-        doExp = do c <- oneOf "∟Ŀ"  -- TODO: use better different symbols
-                   t <- token
-                   case c of
-                     '∟' -> return $ Ex t
-                     'Ŀ' -> return $ Gd t
-                     _   -> fail ""
+        recurse = do c  <- oneOf (codepage \\ "\n") >>= \case
+                             x | x `elem` open -> modifyCtr succ *> return x
+                               | x == ')'      -> modifyCtr pred *> return x
+                               | otherwise     -> return x
+                     cs <- token
+                     return (c:cs)
+
+        open  = "λμξφψχ[]("
+        modifyCtr f = modifyState (\st -> st { parenCtr = f (parenCtr st) })
 
         -- Build up nested lambda-expressions
         processDos :: [DoExp] -> Parser ([ELabel],(Exp [Lit Scheme] -> Exp [Lit Scheme]))

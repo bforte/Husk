@@ -44,7 +44,7 @@ cmd char = error $ "No builtin bound to character " ++ [char]
 commands :: String
 commands = map fst commandsList
 
--- Unused characters: ¿⌐$@HWYZ[]bjlqy{}ΔΦαβγζηθρςτχψ¥ȦḂĖḢṄẆẎŻȧḃċıȷṅẇẋẏÄÏÜŸØäïÿ◊
+-- Unused characters: ¿⌐@HWYZbjlqy{}ΔΦαβγζηθρςτχψ¥ȦḂĖḢṄẆẎŻȧḃċıȷṅẇẋẏÄÏÜŸØäïÿ◊
 
 -- Assoc list of commands that can occur in source
 commandsList :: [(Char, Exp [Lit Scheme])]
